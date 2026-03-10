@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Model files (keep optimized ones, ignore large originals)
+*.h5
+*.hdf5
+*.pb
+*.tflite
+!optimized_models/*.h5
+!optimized_models/*.tflite
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/
+
+# Training outputs
+training_output.txt
+training_plots.png
+*.log
+
+# Data (if large)
+# IMPORTANT: don't upload datasets to GitHub
+train/
+validation/
+test/
