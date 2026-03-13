@@ -11,17 +11,6 @@ A clean, modern web UI for a **Cat vs Dog** image classifier. Upload an image (d
 - **Result badge** + confidence bar
 - **Flask backend** with a simple JSON prediction endpoint
 
-## Project structure
-
-```text
-cat-and-dog-image-classifier/
-  app.py
-  requirements.txt
-  templates/
-    index.html
-  static/
-    app.js
-```
 
 ## Requirements
 
