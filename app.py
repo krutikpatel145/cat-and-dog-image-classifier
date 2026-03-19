@@ -1,80 +1,84 @@
-import streamlit as st
-import numpy as np
-from PIL import Image
+import io
 import os
 
-# ── Page config ────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Dog vs Cat Classifier",
-    page_icon="🐾",
-    layout="centered"
-)
+import numpy as np
+from flask import Flask, jsonify, render_template, request
+from PIL import Image
+from tensorflow import keras
+from tensorflow.keras.preprocessing import image as keras_image
 
-# ── Load model (cached so it only loads once) ──────────────────
-@st.cache_resource
-def load_model():
-    import tensorflow as tf
 
-    # Try optimized model first, then fall back to main model
-    model_paths = [
-        "optimized_models/dog_cat_model_optimized.h5",
-        "dog_cat_model.h5",
-    ]
-    for path in model_paths:
+POSSIBLE_MODEL_PATHS = [
+    "optimized_models/model_optimized.h5",
+    "dog_cat_model.h5",
+    "dogs_vs_cats_model.h5",
+    "dogs_vs_cats_simple_cnn.h5",
+]
+
+IMG_HEIGHT = 150
+IMG_WIDTH = 150
+CLASS_NAMES = ["Cat", "Dog"]
+
+
+def resolve_model_path() -> str | None:
+    for path in POSSIBLE_MODEL_PATHS:
         if os.path.exists(path):
-            return tf.keras.models.load_model(path)
+            return path
+    return None
 
-    st.error("❌ No model file found. Please ensure `dog_cat_model.h5` is in the repo.")
-    st.stop()
 
-# ── Prediction helper ──────────────────────────────────────────
-def predict(model, image: Image.Image):
-    IMG_SIZE = 150
-    img = image.convert("RGB").resize((IMG_SIZE, IMG_SIZE))
-    arr = np.array(img, dtype=np.float32) / 255.0
-    arr = np.expand_dims(arr, axis=0)          # shape: (1, 150, 150, 3)
-    prob = float(model.predict(arr, verbose=0)[0][0])
-    label = "🐶 Dog" if prob >= 0.5 else "🐱 Cat"
-    confidence = prob if prob >= 0.5 else 1 - prob
-    return label, confidence
+MODEL_PATH = resolve_model_path()
+MODEL = keras.models.load_model(MODEL_PATH) if MODEL_PATH else None
 
-# ── UI ─────────────────────────────────────────────────────────
-st.title("🐾 Dog vs Cat Classifier")
-st.markdown("Upload a photo and the model will tell you whether it's a **dog** or a **cat**.")
 
-model = load_model()
+def preprocess_image(img: Image.Image) -> np.ndarray:
+    img = img.convert("RGB").resize((IMG_WIDTH, IMG_HEIGHT))
+    img_array = keras_image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_array = img_array / 255.0
+    return img_array
 
-uploaded = st.file_uploader(
-    "Choose an image…",
-    type=["jpg", "jpeg", "png", "webp"],
-    label_visibility="collapsed"
-)
 
-if uploaded:
-    image = Image.open(uploaded)
+def predict_image(img_array: np.ndarray) -> tuple[str, float, float]:
+    raw = float(MODEL.predict(img_array, verbose=0)[0][0])
+    idx = int(raw > 0.5)
+    label = CLASS_NAMES[idx]
+    confidence = raw if idx == 1 else (1.0 - raw)
+    return label, float(confidence), raw
 
-    col1, col2 = st.columns([1, 1])
 
-    with col1:
-        st.image(image, caption="Uploaded image", use_container_width=True)
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB
 
-    with col2:
-        with st.spinner("Classifying…"):
-            label, confidence = predict(model, image)
 
-        st.markdown("### Result")
-        st.markdown(f"## {label}")
-        st.metric("Confidence", f"{confidence * 100:.1f}%")
+@app.get("/")
+def index():
+    return render_template("index.html", model_loaded=MODEL is not None, model_path=MODEL_PATH)
 
-        color = "green" if confidence >= 0.80 else "orange" if confidence >= 0.60 else "red"
-        st.progress(int(confidence * 100))
 
-        if confidence < 0.65:
-            st.warning("⚠️ Low confidence — try a clearer photo with a single pet.")
+@app.post("/predict")
+def predict():
+    if MODEL is None:
+        return jsonify({"error": "Model file not found. Please place a trained .h5 model in the project."}), 500
 
-else:
-    st.info("👆 Upload a JPG or PNG image of a cat or dog to get started.")
+    if "image" not in request.files:
+        return jsonify({"error": "No file part named 'image'."}), 400
 
-# ── Footer ─────────────────────────────────────────────────────
-st.markdown("---")
-st.caption("Built with TensorFlow & Streamlit · [GitHub](https://github.com/krutikpatel145/cat-and-dog-image-classifier)")
+    file = request.files["image"]
+    if not file.filename:
+        return jsonify({"error": "No file selected."}), 400
+
+    try:
+        content = file.read()
+        img = Image.open(io.BytesIO(content))
+    except Exception:
+        return jsonify({"error": "Invalid image file."}), 400
+
+    img_array = preprocess_image(img)
+    label, confidence, raw_score = predict_image(img_array)
+
+    return jsonify({"label": label, "confidence": confidence, "raw_score": raw_score})
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
