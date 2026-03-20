@@ -62,6 +62,7 @@ def main() -> None:
 
           .badge-cat { background: rgba(237, 233, 254, 1); color: #5b21b6; border-color: rgba(199, 210, 254, 1); }
           .badge-dog { background: rgba(224, 242, 254, 1); color: #0369a1; border-color: rgba(186, 230, 253, 1); }
+          .badge-unknown { background: rgba(241, 245, 249, 1); color: #475569; border-color: rgba(203, 213, 225, 1); }
 
           .pill {
             border-radius: 1rem;
@@ -120,6 +121,7 @@ def main() -> None:
             .error-box { border-color: rgba(251, 113, 133, 0.45); background: rgba(127, 29, 29, 0.15); color: rgba(225, 29, 72, 0.95); }
             .badge-cat { background: rgba(69, 20, 103, 0.35); color: rgba(216, 180, 254, 1); border-color: rgba(199, 210, 254, 0.45); }
             .badge-dog { background: rgba(7, 89, 133, 0.35); color: rgba(186, 230, 253, 1); border-color: rgba(186, 230, 253, 0.45); }
+            .badge-unknown { background: rgba(30, 41, 59, 0.7); color: rgba(148, 163, 184, 1); border-color: rgba(51, 65, 85, 0.6); }
           }
         </style>
         """,
@@ -207,7 +209,12 @@ def main() -> None:
                         cat_pct = float(cat_prob) * 100.0
                         dog_pct = float(dog_prob) * 100.0
 
-                        badge_class = "badge-cat" if str(label).lower().find("cat") >= 0 else "badge-dog"
+                        if str(label).lower() == "cat":
+                            badge_class = "badge-cat"
+                        elif str(label).lower() == "dog":
+                            badge_class = "badge-dog"
+                        else:
+                            badge_class = "badge-unknown"
                         safe_label = _html.escape(str(label))
 
                         st.markdown(

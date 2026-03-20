@@ -231,11 +231,14 @@ function renderResult(data) {
   const confidence = Number(data.confidence);
   const rawScore = Number(data.raw_score);
 
-  const isCat = String(label).toLowerCase().includes("cat");
-
-  const badgeClass = isCat
-    ? "bg-violet-50 text-violet-800 ring-1 ring-violet-200"
-    : "bg-sky-50 text-sky-800 ring-1 ring-sky-200";
+  const lowerLabel = String(label).toLowerCase();
+  let badgeClass = "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
+  
+  if (lowerLabel === "cat") {
+    badgeClass = "bg-violet-50 text-violet-800 ring-1 ring-violet-200";
+  } else if (lowerLabel === "dog") {
+    badgeClass = "bg-sky-50 text-sky-800 ring-1 ring-sky-200";
+  }
 
   resultBadge.className = `rounded-full px-4 py-2 text-sm font-semibold ${badgeClass}`;
   resultBadge.textContent = label;

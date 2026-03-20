@@ -1,49 +1,29 @@
-import os
-
 import numpy as np
 from PIL import Image
 from tensorflow import keras
-from tensorflow.keras.preprocessing import image as keras_image
+from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2, preprocess_input
 
-
-POSSIBLE_MODEL_PATHS = [
-    "optimized_models/model_optimized.h5",
-    "dog_cat_model.h5",
-    "dogs_vs_cats_model.h5",
-    "dogs_vs_cats_simple_cnn.h5",
-]
-
-IMG_HEIGHT = 150
-IMG_WIDTH = 150
-CLASS_NAMES = ["Cat", "Dog"]
-MODEL_THRESHOLD = 0.5
-
+IMG_HEIGHT = 224
+IMG_WIDTH = 224
+CLASS_NAMES = ["Cat", "Dog", "Not Detected"]
 
 def resolve_model_path() -> str | None:
-    for path in POSSIBLE_MODEL_PATHS:
-        if os.path.exists(path):
-            return path
-    return None
+    # Kept for backward compatibility with app.py imports
+    return "mobilenet_v2"
 
-
-def load_model(model_path: str | None) -> tuple[keras.Model | None, str | None]:
-    if not model_path:
-        return None, "No .h5 model found in the supported locations."
-
+def load_model(model_path: str | None = None) -> tuple[keras.Model | None, str | None]:
     try:
-        model = keras.models.load_model(model_path)
+        model = MobileNetV2(weights="imagenet")
         return model, None
-    except Exception as e:  # pragma: no cover - depends on local model validity
-        return None, f"Failed to load model from '{model_path}': {e}"
-
+    except Exception as e:
+        return None, f"Failed to load MobileNetV2: {e}"
 
 def preprocess_image(img: Image.Image) -> np.ndarray:
     img = img.convert("RGB").resize((IMG_WIDTH, IMG_HEIGHT))
-    img_array = keras_image.img_to_array(img)
+    img_array = keras.preprocessing.image.img_to_array(img)
     img_array = np.expand_dims(img_array, axis=0)
-    img_array = img_array / 255.0
+    img_array = preprocess_input(img_array)
     return img_array
-
 
 def predict_image(
     model: keras.Model,
@@ -51,19 +31,33 @@ def predict_image(
 ) -> tuple[str, float, float, float, float]:
     """
     Returns:
-      - label: "Cat" or "Dog"
+      - label: "Cat", "Dog", or "Not Detected"
       - confidence: probability of the predicted label
-      - raw_score: raw model output (not forced into [0,1])
-      - cat_prob: probability of Cat in [0,1]
-      - dog_prob: probability of Dog in [0,1]
+      - raw_score: float, probability of the top ImageNet class
+      - cat_prob: probability if it's considered a cat
+      - dog_prob: probability if it's considered a dog
     """
+    preds = model.predict(img_array, verbose=0)[0]
+    top_class_idx = int(np.argmax(preds))
+    top_class_prob = float(preds[top_class_idx])
 
-    raw_score = float(model.predict(img_array, verbose=0)[0][0])
-    dog_prob = float(np.clip(raw_score, 0.0, 1.0))
-    cat_prob = float(1.0 - dog_prob)
+    # ImageNet Dog classes: 151 to 268 inclusive
+    # ImageNet Cat classes: 281 to 285 inclusive (tabby, tiger cat, Persian cat, Siamese cat, Egyptian cat)
+    
+    if 151 <= top_class_idx <= 268:
+        label = "Dog"
+        confidence = top_class_prob
+        dog_prob = top_class_prob
+        cat_prob = 0.0
+    elif 281 <= top_class_idx <= 285:
+        label = "Cat"
+        confidence = top_class_prob
+        dog_prob = 0.0
+        cat_prob = top_class_prob
+    else:
+        label = "Not Detected"
+        confidence = top_class_prob
+        dog_prob = 0.0
+        cat_prob = 0.0
 
-    label = CLASS_NAMES[int(dog_prob > MODEL_THRESHOLD)]
-    confidence = dog_prob if label == "Dog" else cat_prob
-
-    return label, float(confidence), float(raw_score), float(cat_prob), float(dog_prob)
-
+    return label, confidence, top_class_prob, cat_prob, dog_prob
