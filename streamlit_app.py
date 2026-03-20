@@ -2,11 +2,10 @@ import io
 import os
 
 import numpy as np
-from flask import Flask, jsonify, render_template, request
+import streamlit as st
 from PIL import Image
 from tensorflow import keras
 from tensorflow.keras.preprocessing import image as keras_image
-
 
 POSSIBLE_MODEL_PATHS = [
     "optimized_models/model_optimized.h5",
@@ -47,38 +46,35 @@ def predict_image(img_array: np.ndarray) -> tuple[str, float, float]:
     return label, float(confidence), raw
 
 
-app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB
+def main() -> None:
+    st.set_page_config(page_title="Cat vs Dog Classifier", layout="centered")
+    st.title("Cat vs Dog Image Classifier")
+    st.write("Upload an image and the model will predict whether it is a cat or a dog.")
 
-
-@app.get("/")
-def index():
-    return render_template("index.html", model_loaded=MODEL is not None, model_path=MODEL_PATH)
-
-
-@app.post("/predict")
-def predict():
     if MODEL is None:
-        return jsonify({"error": "Model file not found. Please place a trained .h5 model in the project."}), 500
+        st.error(
+            "Model file not found. Please upload your trained .h5 model in one of these paths: "
+            + ", ".join(POSSIBLE_MODEL_PATHS)
+        )
+        st.stop()
 
-    if "image" not in request.files:
-        return jsonify({"error": "No file part named 'image'."}), 400
+    uploaded_file = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png"])
 
-    file = request.files["image"]
-    if not file.filename:
-        return jsonify({"error": "No file selected."}), 400
+    if uploaded_file is not None:
+        try:
+            img = Image.open(io.BytesIO(uploaded_file.read()))
+        except Exception:
+            st.error("Invalid image file. Please upload a valid JPG/PNG image.")
+            return
 
-    try:
-        content = file.read()
-        img = Image.open(io.BytesIO(content))
-    except Exception:
-        return jsonify({"error": "Invalid image file."}), 400
+        st.image(img, caption="Uploaded image", use_column_width=True)
+        img_array = preprocess_image(img)
+        label, confidence, raw_score = predict_image(img_array)
 
-    img_array = preprocess_image(img)
-    label, confidence, raw_score = predict_image(img_array)
-
-    return jsonify({"label": label, "confidence": confidence, "raw_score": raw_score})
+        st.success(f"Prediction: {label}")
+        st.write(f"Confidence: {confidence:.4f}")
+        st.write(f"Raw model score: {raw_score:.4f}")
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    main()
