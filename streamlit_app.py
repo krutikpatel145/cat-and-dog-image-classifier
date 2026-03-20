@@ -3,7 +3,7 @@ import html as _html
 import streamlit as st
 from PIL import Image
 
-from inference import POSSIBLE_MODEL_PATHS, load_model, predict_image, preprocess_image, resolve_model_path
+from inference import load_model, predict_image, preprocess_image, resolve_model_path
 
 
 MAX_FILE_BYTES = 10 * 1024 * 1024  # 10MB
@@ -141,12 +141,12 @@ def main() -> None:
     )
 
     @st.cache_resource
-    def get_model():
+    def get_inference_engine():
         model_path = resolve_model_path()
         model, err = load_model(model_path)
         return model, err, model_path
 
-    model, model_error, model_path = get_model()
+    model, model_error, model_path = get_inference_engine()
 
     if model is None:
         safe_model_error = _html.escape(model_error or "Unknown model load error.")
