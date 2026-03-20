@@ -13,11 +13,58 @@ const resultWrap = document.getElementById("resultWrap");
 const resultBadge = document.getElementById("resultBadge");
 const confidenceText = document.getElementById("confidenceText");
 const rawScoreText = document.getElementById("rawScoreText");
-const confidenceBar = document.getElementById("confidenceBar");
+const loadingPanel = document.getElementById("loadingPanel");
+
+const catProbText = document.getElementById("catProbText");
+const dogProbText = document.getElementById("dogProbText");
+const catBar = document.getElementById("catBar");
+const dogBar = document.getElementById("dogBar");
 
 const errorWrap = document.getElementById("errorWrap");
 
+const themeToggle = document.getElementById("themeToggle");
+
 let selectedFile = null;
+
+const modelLoaded = window.__MODEL_LOADED__ === true;
+const modelError = window.__MODEL_ERROR__ || "";
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10MB
+
+function clamp01(v) {
+  return Math.max(0, Math.min(1, v));
+}
+
+function initTheme() {
+  if (!themeToggle) return;
+
+  try {
+    const saved = window.localStorage.getItem("theme");
+    const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
+    const shouldDark = saved ? saved === "dark" : !!prefersDark;
+
+    document.documentElement.classList.toggle("dark", shouldDark);
+    themeToggle.textContent = shouldDark ? "Light mode" : "Dark mode";
+  } catch (_e) {
+    // If localStorage is blocked, just leave the default theme.
+  }
+}
+
+function toggleTheme() {
+  try {
+    const nowDark = !document.documentElement.classList.contains("dark");
+    document.documentElement.classList.toggle("dark", nowDark);
+    window.localStorage.setItem("theme", nowDark ? "dark" : "light");
+    if (themeToggle) themeToggle.textContent = nowDark ? "Light mode" : "Dark mode";
+  } catch (_e) {
+    // Ignore if theme persistence isn't available.
+  }
+}
+
+initTheme();
+if (themeToggle) {
+  themeToggle.addEventListener("click", toggleTheme);
+}
 
 function humanFileSize(bytes) {
   const units = ["B", "KB", "MB", "GB"];
@@ -49,18 +96,29 @@ function resetResult() {
   resultBadge.textContent = "";
   confidenceText.textContent = "";
   rawScoreText.textContent = "";
-  confidenceBar.style.width = "0%";
+
+  if (catProbText) catProbText.textContent = "—";
+  if (dogProbText) dogProbText.textContent = "—";
+  if (catBar) catBar.style.width = "0%";
+  if (dogBar) dogBar.style.width = "0%";
+
+  if (loadingPanel) loadingPanel.classList.add("hidden");
 }
 
 function setLoading(isLoading) {
-  predictBtn.disabled = isLoading || !selectedFile;
+  predictBtn.disabled = isLoading || !selectedFile || !modelLoaded;
   spinner.classList.toggle("hidden", !isLoading);
+  if (loadingPanel) loadingPanel.classList.toggle("hidden", !isLoading);
   predictBtnText.textContent = isLoading ? "Predicting" : "Predict";
   statusText.textContent = isLoading
     ? "Running model inference…"
     : selectedFile
       ? "Click Predict to continue."
-      : "Select an image to enable prediction.";
+      : modelLoaded
+        ? "Select an image to enable prediction."
+        : modelError
+          ? `Model not loaded: ${modelError}`
+          : "Model not loaded. Check server logs and restart.";
 }
 
 function setFile(file) {
@@ -72,7 +130,11 @@ function setFile(file) {
     previewWrap.classList.add("hidden");
     clearBtn.classList.add("hidden");
     predictBtn.disabled = true;
-    statusText.textContent = "Select an image to enable prediction.";
+    statusText.textContent = modelLoaded
+      ? "Select an image to enable prediction."
+      : modelError
+        ? `Model not loaded: ${modelError}`
+        : "Model not loaded. Check server logs and restart.";
     fileInput.value = "";
     return;
   }
@@ -86,8 +148,12 @@ function setFile(file) {
   previewImg.onload = () => URL.revokeObjectURL(url);
   previewImg.src = url;
 
-  predictBtn.disabled = false;
-  statusText.textContent = "Click Predict to continue.";
+  predictBtn.disabled = !modelLoaded;
+  statusText.textContent = modelLoaded
+    ? "Click Predict to continue."
+    : modelError
+      ? `Model not loaded: ${modelError}`
+      : "Model not loaded. Check server logs and restart.";
 }
 
 function isValidImageFile(file) {
@@ -96,6 +162,11 @@ function isValidImageFile(file) {
   if (okTypes.includes(file.type)) return true;
   const name = (file.name || "").toLowerCase();
   return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".bmp");
+}
+
+function isValidSize(file) {
+  if (!file) return false;
+  return file.size <= MAX_FILE_BYTES;
 }
 
 dropzone.addEventListener("click", (e) => {
@@ -111,6 +182,13 @@ fileInput.addEventListener("change", (e) => {
     showError("Please select a valid image file (PNG, JPG, JPEG, BMP).");
     return;
   }
+
+  if (file && !isValidSize(file)) {
+    setFile(null);
+    showError("File too large. Please choose an image up to 10MB.");
+    return;
+  }
+
   setFile(file);
 });
 
@@ -136,10 +214,19 @@ dropzone.addEventListener("drop", (e) => {
     showError("Please drop a valid image file (PNG, JPG, JPEG, BMP).");
     return;
   }
+
+  if (file && !isValidSize(file)) {
+    setFile(null);
+    showError("File too large. Please drop an image up to 10MB.");
+    return;
+  }
+
   setFile(file || null);
 });
 
 function renderResult(data) {
+  if (loadingPanel) loadingPanel.classList.add("hidden");
+
   const label = data.label;
   const confidence = Number(data.confidence);
   const rawScore = Number(data.raw_score);
@@ -153,16 +240,27 @@ function renderResult(data) {
   resultBadge.className = `rounded-full px-4 py-2 text-sm font-semibold ${badgeClass}`;
   resultBadge.textContent = label;
 
-  const pct = Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) * 100 : 0;
-  confidenceText.textContent = `${pct.toFixed(1)}%`;
+  const confidencePct = Number.isFinite(confidence) ? clamp01(confidence) * 100 : 0;
+  confidenceText.textContent = `${confidencePct.toFixed(1)}%`;
   rawScoreText.textContent = Number.isFinite(rawScore) ? rawScore.toFixed(4) : "—";
-  confidenceBar.style.width = `${pct.toFixed(0)}%`;
+
+  const dogProb = Number.isFinite(data.dog_prob) ? clamp01(Number(data.dog_prob)) : clamp01(rawScore);
+  const catProb = Number.isFinite(data.cat_prob) ? clamp01(Number(data.cat_prob)) : 1.0 - dogProb;
+
+  if (catProbText) catProbText.textContent = `${(catProb * 100).toFixed(1)}%`;
+  if (dogProbText) dogProbText.textContent = `${(dogProb * 100).toFixed(1)}%`;
+  if (catBar) catBar.style.width = `${(catProb * 100).toFixed(0)}%`;
+  if (dogBar) dogBar.style.width = `${(dogProb * 100).toFixed(0)}%`;
 
   resultWrap.classList.remove("hidden");
 }
 
 predictBtn.addEventListener("click", async () => {
   if (!selectedFile) return;
+  if (!modelLoaded) {
+    showError(modelError || "Model not loaded on the server.");
+    return;
+  }
   clearError();
   resetResult();
   setLoading(true);
@@ -191,4 +289,12 @@ predictBtn.addEventListener("click", async () => {
     setLoading(false);
   }
 });
+
+// Set initial state based on server model availability.
+if (!modelLoaded) {
+  predictBtn.disabled = true;
+  statusText.textContent = modelError
+    ? `Model not loaded: ${modelError}`
+    : "Model not loaded. Check server logs and restart.";
+}
 
